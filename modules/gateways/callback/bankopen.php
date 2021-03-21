@@ -1,23 +1,24 @@
 <?php
-
-print_r($_REQUEST);
 /**
- * WHMCS Sample Payment Callback File
+ * WHMCS bankopen Payment Gateway Module
  *
- * This sample file demonstrates how a payment gateway callback should be
- * handled within WHMCS.
+ * Payment Gateway modules allow you to integrate payment solutions with the
+ * WHMCS platform.
  *
- * It demonstrates verifying that the payment gateway module is active,
- * validating an Invoice ID, checking for the existence of a Transaction ID,
- * Logging the Transaction for debugging and Adding Payment to an Invoice.
+ * Within the module itself, all functions must be prefixed with the module
+ * filename, followed by an underscore, and then the function name. For this
+ * example file, the filename is "bankopen" and therefore all functions
+ * begin "bankopen_".
  *
  * For more information, please refer to the online documentation.
  *
- * @see https://developers.whmcs.com/payment-gateways/callbacks/
- *
- * @copyright Copyright (c) WHMCS Limited 2017
- * @license http://www.whmcs.com/license/ WHMCS Eula
+ * @see https://github.com/srapsware/Bankopen-Payment-gateway-for-WHMCS
+ * @author Shiv Singh 
+ * @copyright Copyright (c) Srapsware Technologies Private Limited 2021
+ * @license https://github.com/srapsware/Bankopen-Payment-gateway-for-WHMCS/blob/main/LICENSE
  */
+
+require_once __DIR__.'/../bankopen/layer_api.php';
 
 // Require libraries needed for gateway module functions.
 require_once __DIR__ . '/../../../init.php';
@@ -35,16 +36,101 @@ if (!$gatewayParams['type']) {
     die("Module Not Activated");
 }
 
+$systemUrl = $gatewayParams['systemurl'];
+
+$testMode = $gatewayParams['testMode'];
+
+
+if($testMode)
+{
+$APIKey = $gatewayParams['SandboxAPIKey'];
+$APISecret = $gatewayParams['SandboxAPISecret'];
+$remote_script = "https://sandbox-payments.open.money/layer";
+$environment = 'test';
+
+}else{
+
+$APIKey = $gatewayParams['LiveAPIKey'];
+$APISecret = $gatewayParams['LiveAPISecret'];
+$remote_script = "https://payments.open.money/layer";
+$environment = 'production';
+
+}
+
+
+
+$error = "";
+$status = "";
+
+if(!isset($_POST['layer_payment_id']) || empty($_POST['layer_payment_id'])){
+	$error = "Invalid response.";    
+}
+try {
+    $data = array(
+        'layer_pay_token_id'    => $_POST['layer_pay_token_id'],
+        'layer_order_amount'    => $_POST['layer_order_amount'],
+        'tranid'     			=> $_POST['tranid'],
+    );
+
+    if(empty($error) && verify_hash($data,$_POST['hash'],$APIKey,$APISecret) && !empty($data['tranid'])){
+        $layer_api = new LayerApi($environment,$APIKey,$APISecret);
+        $payment_data = $layer_api->get_payment_details($_POST['layer_payment_id']);
+
+
+        if(isset($payment_data['error'])){
+            $error = "Layer: an error occurred E14".$payment_data['error'];
+        }
+
+        if(empty($error) && isset($payment_data['id']) && !empty($payment_data)){
+            if($payment_data['payment_token']['id'] != $data['layer_pay_token_id']){
+                $error = "Layer: received layer_pay_token_id and collected layer_pay_token_id doesnt match";
+            }
+            elseif($data['layer_order_amount'] != $payment_data['amount']){
+                $error = "Layer: received amount and collected amount doesnt match";
+            }
+            else {
+                switch ($payment_data['status']){
+                    case 'authorized':
+                    case 'captured':
+                        $status = "Payment captured: Payment ID ". $payment_data['id'];
+                        break;
+                    case 'failed':								    
+                    case 'cancelled':
+                        $status = "Payment cancelled/failed: Payment ID ". $payment_data['id'];                        
+                        break;
+                    default:
+                        $status = "Payment pending: Payment ID ". $payment_data['id'];
+                        exit;
+                    break;
+                }
+            }
+        } else {
+            $error = "invalid payment data received E98";
+        }
+    } else {
+        $error = "hash validation failed";
+    }
+
+} catch (Throwable $exception){
+
+   $error =  "Layer: an error occurred " . $exception->getMessage();
+    
+}
+
+
+
+
+
 // Retrieve data returned in payment gateway callback
 // Varies per payment gateway
-$success = $_POST["x_status"];
+$success = $payment_data['status'];
 $invoiceId = $_POST["x_invoice_id"];
-$transactionId = $_POST["x_trans_id"];
-$paymentAmount = $_POST["x_amount"];
-$paymentFee = $_POST["x_fee"];
-$hash = $_POST["x_hash"];
+$transactionId = $_POST["layer_payment_id"];
+$paymentAmount = $_POST["layer_order_amount"];
+$paymentFee = '';
+$hash = $_POST["hash"];
 
-$transactionStatus = $success ? 'Success' : 'Failure';
+$transactionStatus = $success ? 'authorized' : 'failed';
 
 /**
  * Validate callback authenticity.
@@ -53,8 +139,8 @@ $transactionStatus = $success ? 'Success' : 'Failure';
  * originated from them. In the case of our example here, this is achieved by
  * way of a shared secret which is used to build and compare a hash.
  */
-$secretKey = $gatewayParams['secretKey'];
-if ($hash != md5($invoiceId . $transactionId . $paymentAmount . $secretKey)) {
+$APISecret = $gatewayParams['APISecret'];
+if ($payment_data['status'] == 'failed' || $payment_data['status'] == 'cancelled' ) {
     $transactionStatus = 'Hash Verification Failure';
     $success = false;
 }
@@ -122,3 +208,15 @@ if ($success) {
     );
 
 }
+
+
+//## Redirect to invoice details
+
+$location = $systemUrl.'viewinvoice.php?id='.$invoiceId;
+
+header("Location: $location");
+
+if(!empty($error))
+echo $error;
+else
+echo $status;

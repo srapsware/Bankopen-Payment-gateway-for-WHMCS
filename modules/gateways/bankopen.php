@@ -184,7 +184,7 @@ function bankopen_link($params)
     ];
     //main logic
 $error = '';
-$tranid=date("ymd").'-'.rand(1,100);
+$tranid = $invoiceId.'-'.date("ymd").'-'.rand(1,100);
 
 $sample_data['mtx']=$tranid; //unique transaction id to be passed for each transaction 
 $layer_api = new LayerApi($environment,$APIKey,$APISecret);
@@ -238,6 +238,7 @@ if(empty($error) && !empty($payment_token_data)){
         <input type="hidden" name="layer_order_amount" value="'.$payment_token_data['amount'].'">
         <input type="hidden" id="layer_payment_id" name="layer_payment_id" value="">
         <input type="hidden" id="fallback_url" name="fallback_url" value="">
+        <input type="hidden" id="x_invoice_id" name="x_invoice_id" value="'.$invoiceId.'">
         <input type="hidden" name="hash" value="'.$hash.'">
         </form>';
     $html .= "<script>";
