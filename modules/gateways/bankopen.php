@@ -54,14 +54,14 @@ function bankopen_config()
         ),
 
         'SandboxAPIKey' => array(
-            'FriendlyName' => 'API Key',
+            'FriendlyName' => 'Sandbox API Key',
             'Type' => 'text',
             'Size' => '25',
             'Default' => '',
             'Description' => 'Enter sandbox API Key',
         ),
         'SandboxAPISecret' => array(
-            'FriendlyName' => 'API Secret',
+            'FriendlyName' => 'Sandbox API Secret',
             'Type' => 'password',
             'Size' => '25',
             'Default' => '',
